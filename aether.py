@@ -1,8 +1,47 @@
+import ctypes
 import random
 import json
+import sys
+import warnings
 from collections import deque
 import tkinter as tk
 from tkinter import messagebox, simpledialog, filedialog
+
+def configurar_dpi_windows():
+    if sys.platform != "win32":
+        return
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    establecer_contexto = getattr(user32, "SetProcessDpiAwarenessContext", None)
+    if establecer_contexto is not None:
+        establecer_contexto.argtypes = [ctypes.c_void_p]
+        establecer_contexto.restype = ctypes.c_bool
+        if establecer_contexto(ctypes.c_void_p(-4)):
+            return
+
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        establecer_conciencia = shcore.SetProcessDpiAwareness
+        establecer_conciencia.argtypes = [ctypes.c_int]
+        establecer_conciencia.restype = ctypes.c_long
+        if establecer_conciencia(2) == 0:
+            return
+    except OSError:
+        pass
+
+    establecer_sistema = user32.SetProcessDPIAware
+    establecer_sistema.argtypes = []
+    establecer_sistema.restype = ctypes.c_bool
+    if not establecer_sistema():
+        warnings.warn(
+            "No se pudo habilitar la conciencia de DPI en Windows; "
+            "el sistema podría escalar la ventana.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+
+configurar_dpi_windows()
 
 TAMANO = 10
 CELDA = 62
@@ -11,12 +50,12 @@ VIDA_MAXIMA = 100
 ENERGIA_MAXIMA = 100
 
 BIOMAS = {
-    "bosque":   {"simbolo": "B", "color": "#347A45", "claro": "#5FAE69"},
-    "desierto": {"simbolo": "D", "color": "#C99B55", "claro": "#E5C47C"},
-    "nieve":    {"simbolo": "N", "color": "#B8D7E8", "claro": "#E6F5FC"},
-    "pantano":  {"simbolo": "P", "color": "#526B45", "claro": "#839C65"},
-    "montana":  {"simbolo": "M", "color": "#737987", "claro": "#A7ADB8"},
-    "pradera":  {"simbolo": "R", "color": "#7CA64B", "claro": "#A9CE6B"},
+    "bosque":   {"simbolo": "B", "color": "#E0EBDD", "claro": "#C7D9C4", "acento": "#527A5D"},
+    "desierto": {"simbolo": "D", "color": "#F3E8D6", "claro": "#E9D6B8", "acento": "#AA7B42"},
+    "nieve":    {"simbolo": "N", "color": "#E2EDF0", "claro": "#CCDFE5", "acento": "#648A9A"},
+    "pantano":  {"simbolo": "P", "color": "#E5EBDD", "claro": "#D3DEC5", "acento": "#718456"},
+    "montana":  {"simbolo": "M", "color": "#E5E7EB", "claro": "#D1D5DC", "acento": "#707887"},
+    "pradera":  {"simbolo": "R", "color": "#E9EEDC", "claro": "#D9E4C3", "acento": "#77934E"},
 }
 
 NOMBRES_ENEMIGOS = {
@@ -54,122 +93,126 @@ raiz = tk.Tk()
 raiz.title("AETHER | Exploracion y supervivencia")
 raiz.geometry("1450x900")
 raiz.minsize(1120, 720)
-raiz.configure(bg="#07111f")
+raiz.configure(bg="#F3F5F1")
 
 FUENTE = ("Segoe UI", 10)
 FUENTE_BOLD = ("Segoe UI", 10, "bold")
-FONDO = "#07111f"
-PANEL = "#0c1a2b"
-PANEL2 = "#10243a"
-BORDE = "#244564"
-TEXTO = "#eaf3ff"
-SUAVE = "#9eb5cf"
-AZUL = "#1688f8"
-VERDE = "#56d68b"
-ROJO = "#ff5c68"
-AMARILLO = "#f7c948"
+FONDO = "#F3F5F1"
+PANEL = "#FFFFFF"
+PANEL2 = "#F7F8F5"
+BORDE = "#E5E9E2"
+TEXTO = "#26352D"
+SUAVE = "#78857C"
+AZUL = "#527A64"
+VERDE = "#568264"
+ROJO = "#C66C62"
+AMARILLO = "#C7963C"
 
 # Layout principal
 contenedor = tk.Frame(raiz, bg=FONDO)
-contenedor.pack(fill="both", expand=True, padx=8, pady=8)
+contenedor.pack(fill="both", expand=True, padx=18, pady=16)
 
-barra_superior = tk.Frame(contenedor, bg=PANEL, highlightbackground=BORDE, highlightthickness=1)
-barra_superior.pack(fill="x", pady=(0, 8))
+barra_superior = tk.Frame(contenedor, bg=FONDO)
+barra_superior.pack(fill="x", pady=(0, 16))
 
-tk.Label(barra_superior, text="✥  AETHER", font=("Segoe UI", 18, "bold"),
-         fg=TEXTO, bg=PANEL, padx=16, pady=10).pack(side="left")
+marca = tk.Frame(barra_superior, bg=FONDO)
+marca.pack(side="left")
+tk.Label(marca, text="✳", font=("Segoe UI Symbol", 20),
+         fg=AZUL, bg=FONDO).pack(side="left", padx=(2, 9))
+tk.Label(marca, text="AETHER", font=("Segoe UI", 19, "bold"),
+         fg=TEXTO, bg=FONDO).pack(side="left")
 titulo_mundo = tk.Label(barra_superior, text="El mundo te espera",
-                        font=("Segoe UI", 12), fg=SUAVE, bg=PANEL)
+                        font=("Segoe UI", 11), fg=SUAVE, bg=FONDO)
 titulo_mundo.pack(side="left", padx=20)
 jugador_label = tk.Label(barra_superior, text="Jugador: —",
-                         font=FUENTE_BOLD, fg=TEXTO, bg=PANEL, padx=16)
+                         font=FUENTE_BOLD, fg=TEXTO, bg=FONDO, padx=8)
 jugador_label.pack(side="right")
 
 cuerpo = tk.Frame(contenedor, bg=FONDO)
 cuerpo.pack(fill="both", expand=True)
 
 # Menú lateral
-lateral = tk.Frame(cuerpo, bg=PANEL, width=205, highlightbackground=BORDE, highlightthickness=1)
+lateral = tk.Frame(cuerpo, bg=PANEL, width=205)
 lateral.grid(row=0, column=0, sticky="ns", padx=(0, 8))
 lateral.grid_propagate(False)
 
 tk.Label(lateral, text="EXPLORACIÓN", font=("Segoe UI", 9, "bold"),
-         fg=SUAVE, bg=PANEL, pady=14).pack(fill="x")
+         fg=SUAVE, bg=PANEL, pady=17).pack(fill="x")
 
 contenido = tk.Frame(cuerpo, bg=FONDO)
 contenido.grid(row=0, column=1, sticky="nsew")
 
-panel_derecho = tk.Frame(cuerpo, bg=PANEL, width=230, highlightbackground=BORDE, highlightthickness=1)
+panel_derecho = tk.Frame(cuerpo, bg=PANEL, width=230)
 panel_derecho.grid(row=0, column=2, sticky="ns", padx=(8, 0))
 panel_derecho.grid_propagate(False)
 cuerpo.grid_rowconfigure(0, weight=1)
 cuerpo.grid_columnconfigure(1, weight=1)
 
 # Mapa central
-marco_mapa = tk.Frame(contenido, bg=PANEL, highlightbackground=BORDE, highlightthickness=1)
+marco_mapa = tk.Frame(contenido, bg=PANEL)
 marco_mapa.pack(fill="both", expand=True)
 
 encabezado_mapa = tk.Frame(marco_mapa, bg=PANEL)
-encabezado_mapa.pack(fill="x", padx=12, pady=(10, 4))
-tk.Label(encabezado_mapa, text="MAPA DE AETHER", font=("Segoe UI", 13, "bold"),
+encabezado_mapa.pack(fill="x", padx=22, pady=(18, 8))
+tk.Label(encabezado_mapa, text="Mapa de Aether", font=("Segoe UI", 15, "bold"),
          fg=TEXTO, bg=PANEL).pack(side="left")
 estado_mapa = tk.Label(encabezado_mapa, text="Introduce tu nombre para comenzar",
                        font=FUENTE, fg=SUAVE, bg=PANEL)
 estado_mapa.pack(side="right")
 
-canvas = tk.Canvas(marco_mapa, bg="#081321", highlightthickness=0)
-canvas.pack(fill="both", expand=True, padx=8, pady=8)
+canvas = tk.Canvas(marco_mapa, bg="#FBFCFA", highlightthickness=0)
+canvas.pack(fill="both", expand=True, padx=14, pady=8)
 
-leyenda = tk.Frame(marco_mapa, bg=PANEL2)
-leyenda.pack(fill="x", padx=8, pady=(0, 8))
+leyenda = tk.Frame(marco_mapa, bg=PANEL)
+leyenda.pack(fill="x", padx=18, pady=(4, 12))
 
 # Panel derecho
 def titulo_panel(parent, texto):
-    tk.Label(parent, text=texto, font=("Segoe UI", 10, "bold"),
-             fg=TEXTO, bg=PANEL, anchor="w", padx=12, pady=10).pack(fill="x")
+    tk.Label(parent, text=texto, font=("Segoe UI", 9, "bold"),
+             fg=SUAVE, bg=PANEL, anchor="w", padx=16, pady=14).pack(fill="x")
 
 titulo_panel(panel_derecho, "ESTADO DEL PERSONAJE")
 estado_frame = tk.Frame(panel_derecho, bg=PANEL)
-estado_frame.pack(fill="x", padx=12)
+estado_frame.pack(fill="x", padx=16)
 
 vida_texto = tk.Label(estado_frame, text="Vida  100 / 100", font=FUENTE_BOLD, fg=TEXTO, bg=PANEL, anchor="w")
 vida_texto.pack(fill="x", pady=(2, 3))
-vida_barra = tk.Canvas(estado_frame, height=12, bg="#243449", highlightthickness=0)
-vida_barra.pack(fill="x", pady=(0, 10))
+vida_barra = tk.Canvas(estado_frame, height=8, bg="#EDF0EB", highlightthickness=0)
+vida_barra.pack(fill="x", pady=(0, 12))
 
 energia_texto = tk.Label(estado_frame, text="Energía  100 / 100", font=FUENTE_BOLD, fg=TEXTO, bg=PANEL, anchor="w")
 energia_texto.pack(fill="x", pady=(2, 3))
-energia_barra = tk.Canvas(estado_frame, height=12, bg="#243449", highlightthickness=0)
-energia_barra.pack(fill="x", pady=(0, 10))
+energia_barra = tk.Canvas(estado_frame, height=8, bg="#EDF0EB", highlightthickness=0)
+energia_barra.pack(fill="x", pady=(0, 12))
 
 nivel_titulo = tk.Label(estado_frame, text="NIVEL 1 · 0%", font=FUENTE_BOLD, fg=AMARILLO, bg=PANEL, anchor="w")
 nivel_titulo.pack(fill="x", pady=(4, 3))
-xp_barra = tk.Canvas(estado_frame, height=12, bg="#243449", highlightthickness=0)
+xp_barra = tk.Canvas(estado_frame, height=8, bg="#EDF0EB", highlightthickness=0)
 xp_barra.pack(fill="x", pady=(0, 8))
 
-tk.Frame(panel_derecho, bg=BORDE, height=1).pack(fill="x", padx=10, pady=5)
+tk.Frame(panel_derecho, bg=BORDE, height=1).pack(fill="x", padx=16, pady=8)
 titulo_panel(panel_derecho, "MÉTRICAS")
 metricas_frame = tk.Frame(panel_derecho, bg=PANEL)
-metricas_frame.pack(fill="x", padx=12)
+metricas_frame.pack(fill="x", padx=16)
 metricas_label = tk.Label(metricas_frame, text="Zonas exploradas: 0\nJefes derrotados: 0 / 3\nMovimientos: 0",
                           font=FUENTE, fg=SUAVE, bg=PANEL, justify="left", anchor="w")
 metricas_label.pack(fill="x")
 
-tk.Frame(panel_derecho, bg=BORDE, height=1).pack(fill="x", padx=10, pady=5)
+tk.Frame(panel_derecho, bg=BORDE, height=1).pack(fill="x", padx=16, pady=8)
 titulo_panel(panel_derecho, "REGISTRO")
-registro = tk.Listbox(panel_derecho, height=11, bg="#091625", fg="#cfe2f8",
-                      selectbackground=AZUL, relief="flat", borderwidth=0,
+registro = tk.Listbox(panel_derecho, height=11, bg="#FFFFFF", fg=TEXTO,
+                      selectbackground="#E4EEE7", selectforeground=TEXTO, relief="flat", borderwidth=0,
                       font=("Segoe UI", 9), activestyle="none")
-registro.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+registro.pack(fill="both", expand=True, padx=16, pady=(0, 16))
 
 # Barra inferior
-barra_inferior = tk.Frame(contenedor, bg=PANEL, highlightbackground=BORDE, highlightthickness=1)
-barra_inferior.pack(fill="x", pady=(8, 0))
+barra_inferior = tk.Frame(contenedor, bg=FONDO)
+barra_inferior.pack(fill="x", pady=(12, 0))
 mensaje = tk.Label(barra_inferior, text="Bienvenido a Aether.", font=FUENTE,
-                   fg=TEXTO, bg=PANEL, anchor="w", padx=12, pady=10)
+                   fg=TEXTO, bg=FONDO, anchor="w", padx=2, pady=6)
 mensaje.pack(side="left", fill="x", expand=True)
-atajos = tk.Label(barra_inferior, text="W A S D: mover   E: explorar   R: descansar   G/L: guardar/cargar   Q: salir",
-                  font=("Segoe UI", 9), fg=SUAVE, bg=PANEL, padx=12)
+atajos = tk.Label(barra_inferior, text="W A S D mover   ·   E explorar   ·   R descansar   ·   G/L guardar/cargar   ·   Q salir",
+                  font=("Segoe UI", 9), fg=SUAVE, bg=FONDO, padx=2)
 atajos.pack(side="right")
 
 movimientos = 0
@@ -246,9 +289,101 @@ def explorar_manual():
 def dibujar_barra(canvas_barra, valor, maximo, color):
     canvas_barra.delete("all")
     w = max(canvas_barra.winfo_width(), 120)
-    canvas_barra.create_rectangle(0, 0, w, 12, fill="#243449", outline="")
+    h = max(canvas_barra.winfo_height(), 8)
+    canvas_barra.create_rectangle(0, 0, w, h, fill="#EDF0EB", outline="")
     relleno = max(0, min(w, w * valor / maximo))
-    canvas_barra.create_rectangle(0, 0, relleno, 12, fill=color, outline="")
+    if relleno:
+        canvas_barra.create_rectangle(0, 0, relleno, h, fill=color, outline="")
+
+def dibujar_icono_bioma(superficie, bioma, centro_x, centro_y, tamano):
+    acento = BIOMAS[bioma]["acento"]
+    claro = BIOMAS[bioma]["claro"]
+    s = max(12, tamano)
+    x, y = centro_x, centro_y
+
+    if bioma == "bosque":
+        superficie.create_rectangle(x - s * .055, y + s * .05, x + s * .055,
+                                    y + s * .43, fill="#8C6749", outline="")
+        superficie.create_polygon(
+            x, y - s * .48, x - s * .34, y + s * .12, x + s * .34, y + s * .12,
+            fill=acento, outline=""
+        )
+        superficie.create_polygon(
+            x, y - s * .12, x - s * .40, y + s * .36, x + s * .40, y + s * .36,
+            fill=claro, outline=""
+        )
+    elif bioma == "desierto":
+        superficie.create_oval(x + s * .18, y - s * .42, x + s * .38,
+                               y - s * .22, fill="#D7A94E", outline="")
+        superficie.create_polygon(
+            x - s * .44, y + s * .34, x - s * .05, y - s * .04,
+            x + s * .43, y + s * .34, fill=claro, outline=""
+        )
+        superficie.create_line(x, y + s * .12, x, y - s * .18,
+                               fill=acento, width=max(2, int(s * .09)))
+        superficie.create_line(x - s * .15, y + s * .03, x - s * .15,
+                               y - s * .09, fill=acento, width=max(2, int(s * .07)))
+        superficie.create_line(x + s * .15, y + s * .08, x + s * .15,
+                               y - s * .08, fill=acento, width=max(2, int(s * .07)))
+    elif bioma == "nieve":
+        superficie.create_polygon(
+            x - s * .46, y + s * .36, x - s * .10, y - s * .36,
+            x + s * .12, y + s * .36, fill=acento, outline=""
+        )
+        superficie.create_polygon(
+            x - s * .12, y + s * .36, x + s * .22, y - s * .46,
+            x + s * .48, y + s * .36, fill=claro, outline=""
+        )
+        superficie.create_polygon(
+            x - s * .20, y - s * .16, x - s * .10, y - s * .36,
+            x + s * .01, y - s * .15, x - s * .10, y - s * .20,
+            fill="#FFFFFF", outline=""
+        )
+        superficie.create_polygon(
+            x + s * .08, y - s * .20, x + s * .22, y - s * .46,
+            x + s * .36, y - s * .19, x + s * .22, y - s * .25,
+            fill="#FFFFFF", outline=""
+        )
+    elif bioma == "pantano":
+        superficie.create_line(x - s * .43, y + s * .28, x + s * .43, y + s * .28,
+                               fill=claro, width=max(2, int(s * .08)))
+        superficie.create_line(x - s * .36, y + s * .40, x + s * .35, y + s * .40,
+                               fill=acento, width=max(1, int(s * .04)))
+        for desplazamiento, alto in ((-.24, .28), (.02, .43), (.25, .34)):
+            superficie.create_line(x + s * desplazamiento, y + s * .19,
+                                   x + s * desplazamiento, y - s * alto,
+                                   fill=acento, width=max(2, int(s * .06)))
+            superficie.create_oval(
+                x + s * (desplazamiento - .09), y - s * (alto + .06),
+                x + s * (desplazamiento + .09), y - s * (alto - .04),
+                fill=claro, outline=""
+            )
+    elif bioma == "montana":
+        superficie.create_polygon(
+            x - s * .48, y + s * .38, x - s * .12, y - s * .32,
+            x + s * .16, y + s * .38, fill=acento, outline=""
+        )
+        superficie.create_polygon(
+            x - s * .10, y + s * .38, x + s * .22, y - s * .46,
+            x + s * .49, y + s * .38, fill=claro, outline=""
+        )
+        superficie.create_polygon(
+            x + s * .07, y - s * .05, x + s * .22, y - s * .46,
+            x + s * .36, y - s * .02, x + s * .22, y - s * .12,
+            fill="#FFFFFF", outline=""
+        )
+    else:
+        for desplazamiento, alto in ((-.28, .33), (-.08, .45), (.14, .36), (.32, .27)):
+            superficie.create_line(
+                x + s * desplazamiento, y + s * .38,
+                x + s * (desplazamiento - .08), y - s * alto,
+                fill=acento, width=max(2, int(s * .055))
+            )
+            superficie.create_oval(
+                x + s * (desplazamiento - .19), y - s * (alto - .04),
+                x + s * (desplazamiento - .04), y - s * (alto - .14),
+                fill=claro, outline=""
+            )
 
 def dibujar_mapa():
     canvas.delete("all")
@@ -262,10 +397,7 @@ def dibujar_mapa():
     x0 = (ancho - total) / 2
     y0 = (alto - total) / 2
 
-    # fondo decorativo
-    canvas.create_rectangle(x0 - 5, y0 - 5, x0 + total + 5, y0 + total + 5,
-                            fill="#0b1b2b", outline="#244564", width=2)
-
+    separacion = max(3, celda * .055)
     for f in range(TAMANO):
         for c in range(TAMANO):
             x1 = x0 + c * celda
@@ -275,39 +407,62 @@ def dibujar_mapa():
             pos = (f, c)
 
             if not visitados[f][c]:
-                color = "#172638"
-                simbolo = "?"
+                color = "#F0F2EF"
+                simbolo = ""
             else:
                 bioma = mundo[f][c]
                 color = BIOMAS[bioma]["color"]
-                simbolo = BIOMAS[bioma]["simbolo"]
+                simbolo = bioma
 
             # La salida solo aparece después del acertijo
             if salida_revelada and pos == (salida_fila, salida_columna):
-                color = "#f7c948"
-                simbolo = "S"
+                color = "#F4E8C9"
+                simbolo = "salida"
 
             if pos in jefes and visitados[f][c]:
-                color = "#a72c3b"
-                simbolo = "J"
+                color = "#F4DFDC"
+                simbolo = "jefe"
 
             if pos == (jugador_fila, jugador_columna):
-                color = "#1688f8"
-                simbolo = "●"
+                color = "#DFECE4"
+                simbolo = "jugador"
 
-            canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="#0a1724", width=2)
-
-            # Decoración sutil dentro de las zonas ya descubiertas
-            if visitados[f][c] and simbolo not in ("●", "J", "S"):
-                canvas.create_text(x1 + 7, y1 + 6, text=simbolo, anchor="nw",
-                                   fill="#ffffff", font=("Segoe UI", max(7, int(celda * .15)), "bold"))
-
-            color_texto = "#ffffff" if simbolo in ("?", "●", "J") else "#142235"
-            if simbolo == "S":
-                color_texto = "#142235"
-            canvas.create_text((x1 + x2) / 2, (y1 + y2) / 2,
-                               text=simbolo, fill=color_texto,
-                               font=("Segoe UI", max(10, int(celda * .32)), "bold"))
+            canvas.create_rectangle(
+                x1 + separacion, y1 + separacion, x2 - separacion, y2 - separacion,
+                fill=color, outline=""
+            )
+            centro_x, centro_y = (x1 + x2) / 2, (y1 + y2) / 2
+            if simbolo in BIOMAS:
+                dibujar_icono_bioma(canvas, simbolo, centro_x, centro_y, celda * .54)
+            elif simbolo == "jefe":
+                radio = celda * .22
+                canvas.create_oval(centro_x - radio, centro_y - radio,
+                                   centro_x + radio, centro_y + radio,
+                                   fill="#B75F57", outline="")
+                canvas.create_text(centro_x, centro_y, text="J", fill="#FFFFFF",
+                                   font=("Segoe UI", max(9, int(celda * .22)), "bold"))
+            elif simbolo == "salida":
+                radio = celda * .24
+                canvas.create_oval(centro_x - radio, centro_y - radio,
+                                   centro_x + radio, centro_y + radio,
+                                   fill="#D5A948", outline="")
+                canvas.create_text(centro_x, centro_y, text="S", fill="#FFFFFF",
+                                   font=("Segoe UI", max(9, int(celda * .2)), "bold"))
+            elif simbolo == "jugador":
+                radio = celda * .22
+                canvas.create_oval(centro_x - radio, centro_y - radio,
+                                   centro_x + radio, centro_y + radio,
+                                   fill=AZUL, outline="#FFFFFF", width=2)
+                canvas.create_oval(centro_x - radio * .26, centro_y - radio * .26,
+                                   centro_x + radio * .26, centro_y + radio * .26,
+                                   fill="#FFFFFF", outline="")
+            else:
+                radio = max(1.5, celda * .025)
+                for desplazamiento in (-1, 0, 1):
+                    cx = centro_x + desplazamiento * radio * 3
+                    canvas.create_oval(cx - radio, centro_y - radio,
+                                       cx + radio, centro_y + radio,
+                                       fill="#D8DDD7", outline="")
 
     estado = "Salida revelada" if salida_revelada else "Explora y encuentra a los jefes"
     estado_mapa.config(text=f"{estado}  |  Jefes restantes: {len(jefes)}")
@@ -586,7 +741,10 @@ def seleccionar_seccion(nombre):
     global seccion_actual
     seccion_actual = nombre
     for boton, texto in botones_menu:
-        boton.configure(bg=AZUL if texto == nombre else PANEL2)
+        boton.configure(
+            bg="#E8F0EA" if texto == nombre else PANEL,
+            fg=AZUL if texto == nombre else TEXTO
+        )
     if nombre == "Mapa":
         registrar("Mapa principal: ● eres tú, J son jefes y S es la salida.", SUAVE)
     elif nombre == "Movimiento":
@@ -779,55 +937,72 @@ def salir_juego():
 
 botones_menu = []
 opciones_menu = [
-    ("▦", "Mapa"),
-    ("✥", "Movimiento"),
-    ("▥", "Métricas"),
+    ("⌖", "Mapa"),
+    ("↗", "Movimiento"),
+    ("◷", "Métricas"),
     ("☾", "Descansar"),
-    ("▣", "Guardar"),
-    ("▤", "Cargar"),
+    ("↓", "Guardar"),
+    ("↑", "Cargar"),
     ("⚙", "Opciones"),
-    ("⇥", "Salir"),
+    ("↗", "Salir"),
 ]
 
 for icono, texto in opciones_menu:
     b = tk.Button(
-        lateral, text=f"  {icono}   {texto}", anchor="w",
-        font=FUENTE_BOLD, fg=TEXTO, bg=AZUL if texto == "Mapa" else PANEL2,
-        activebackground=AZUL, activeforeground="white", relief="flat",
-        padx=10, pady=10, cursor="hand2",
+        lateral, text=f"{icono}    {texto}", anchor="w",
+        font=FUENTE_BOLD, fg=AZUL if texto == "Mapa" else TEXTO,
+        bg="#E8F0EA" if texto == "Mapa" else PANEL,
+        activebackground="#EEF3EF", activeforeground=TEXTO, relief="flat",
+        padx=12, pady=7, cursor="hand2", bd=0,
         command=lambda t=texto: seleccionar_seccion(t)
     )
-    b.pack(fill="x", padx=9, pady=3)
+    b.pack(fill="x", padx=9, pady=2)
+    b.bind(
+        "<Enter>",
+        lambda evento, boton=b, nombre=texto: boton.configure(
+            bg="#E8F0EA" if nombre == seccion_actual else PANEL2
+        )
+    )
+    b.bind(
+        "<Leave>",
+        lambda evento, boton=b, nombre=texto: boton.configure(
+            bg="#E8F0EA" if nombre == seccion_actual else PANEL
+        )
+    )
     botones_menu.append((b, texto))
 
-tk.Frame(lateral, bg=BORDE, height=1).pack(fill="x", padx=10, pady=12)
-tk.Label(lateral, text="LEYENDA", font=("Segoe UI", 9, "bold"),
-         fg=SUAVE, bg=PANEL).pack(anchor="w", padx=14, pady=(0, 8))
+tk.Frame(lateral, bg=BORDE, height=1).pack(fill="x", padx=14, pady=14)
+tk.Label(lateral, text="BIOMAS", font=("Segoe UI", 9, "bold"),
+         fg=SUAVE, bg=PANEL).pack(anchor="w", padx=17, pady=(0, 8))
 
-for simbolo, texto, color in [
-    ("●", "Jugador", "#1688f8"),
-    ("J", "Jefe", "#a72c3b"),
-    ("S", "Salida", "#f7c948"),
-    ("B", "Bosque", BIOMAS["bosque"]["color"]),
-    ("D", "Desierto", BIOMAS["desierto"]["color"]),
-    ("N", "Nieve", BIOMAS["nieve"]["color"]),
-    ("P", "Pantano", BIOMAS["pantano"]["color"]),
-    ("M", "Montaña", BIOMAS["montana"]["color"]),
-    ("R", "Pradera", BIOMAS["pradera"]["color"]),
+for bioma, texto in [
+    ("bosque", "Bosque"),
+    ("desierto", "Desierto"),
+    ("nieve", "Nieve"),
+    ("pantano", "Pantano"),
+    ("montana", "Montaña"),
+    ("pradera", "Pradera"),
 ]:
     fila_leyenda = tk.Frame(lateral, bg=PANEL)
-    fila_leyenda.pack(fill="x", padx=14, pady=2)
-    tk.Label(fila_leyenda, text=simbolo, width=3, fg="white", bg=color,
-             font=FUENTE_BOLD).pack(side="left")
-    tk.Label(fila_leyenda, text=texto, fg=SUAVE, bg=PANEL, font=FUENTE).pack(side="left", padx=8)
+    fila_leyenda.pack(fill="x", padx=15, pady=2)
+    icono_bioma = tk.Canvas(fila_leyenda, width=24, height=24, bg=PANEL2,
+                            highlightthickness=0)
+    icono_bioma.pack(side="left")
+    dibujar_icono_bioma(icono_bioma, bioma, 12, 12, 16)
+    tk.Label(fila_leyenda, text=texto, fg=TEXTO, bg=PANEL,
+             font=("Segoe UI", 9)).pack(side="left", padx=9)
 
 def actualizar_leyenda_inferior():
     for hijo in leyenda.winfo_children():
         hijo.destroy()
-    tk.Label(leyenda, text="● Tú", fg="#7fc4ff", bg=PANEL2, font=FUENTE_BOLD, padx=8, pady=7).pack(side="left")
-    tk.Label(leyenda, text="J Jefe", fg="#ff929a", bg=PANEL2, font=FUENTE_BOLD, padx=8, pady=7).pack(side="left")
-    tk.Label(leyenda, text="S Salida", fg=AMARILLO, bg=PANEL2, font=FUENTE_BOLD, padx=8, pady=7).pack(side="left")
-    tk.Label(leyenda, text="Las zonas oscuras aún no se han descubierto", fg=SUAVE, bg=PANEL2, font=FUENTE, padx=8, pady=7).pack(side="right")
+    tk.Label(leyenda, text="● Tú", fg=AZUL, bg=PANEL, font=FUENTE_BOLD,
+             padx=5, pady=7).pack(side="left")
+    tk.Label(leyenda, text="● Jefe", fg=ROJO, bg=PANEL, font=FUENTE_BOLD,
+             padx=5, pady=7).pack(side="left")
+    tk.Label(leyenda, text="● Salida", fg=AMARILLO, bg=PANEL, font=FUENTE_BOLD,
+             padx=5, pady=7).pack(side="left")
+    tk.Label(leyenda, text="Las zonas grises siguen ocultas", fg=SUAVE, bg=PANEL,
+             font=("Segoe UI", 9), padx=5, pady=7).pack(side="right")
 
 
 
