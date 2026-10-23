@@ -44,6 +44,16 @@ def configurar_dpi_windows():
 configurar_dpi_windows()
 
 TAMANO = 10
+RADIO_JEFES_SALIDA = 3
+CARAS_DADO_ZONA_FACIL = 4
+ZONA_FACIL = frozenset(
+    (fila, columna)
+    for fila in range(TAMANO // 2 - 3, TAMANO // 2)
+    for columna in range(TAMANO // 2 - 2, TAMANO // 2 + 2)
+)
+MINIJEFES_CERCA = 4
+MINIJEFES_LEJANOS = 2
+EXPERIENCIA_MINIJEFE = 30
 CELDA = 62
 MARGEN = 18
 VIDA_MAXIMA = 100
@@ -77,6 +87,7 @@ energia = ENERGIA_MAXIMA
 nivel = 1
 experiencia = 0.0
 jefes = set()
+minijefes = set()
 jefes_derrotados = 0
 salida_fila = 0
 salida_columna = 0
@@ -238,9 +249,67 @@ def posicion_libre(excluir):
         if (f, c) not in excluir:
             return f, c
 
+def es_esquina(fila, columna):
+    return fila in (0, TAMANO - 1) and columna in (0, TAMANO - 1)
+
+def posiciones_jefes_cerca_salida(fila_salida, columna_salida, excluir, cantidad):
+    candidatas = [
+        (f, c)
+        for f in range(TAMANO)
+        for c in range(TAMANO)
+        if 0 < abs(f - fila_salida) + abs(c - columna_salida) <= RADIO_JEFES_SALIDA
+        and (f, c) not in excluir
+    ]
+    if len(candidatas) < cantidad:
+        raise RuntimeError("No hay suficientes posiciones para colocar a los jefes.")
+    return set(random.sample(candidatas, cantidad))
+
+def generar_posiciones_jefes(fila_salida, columna_salida, excluir, cantidad):
+    if cantidad == 0:
+        return set()
+    posiciones_faciles = list(ZONA_FACIL - excluir)
+    if not posiciones_faciles:
+        raise RuntimeError("No hay posiciones libres en la zona fácil para un jefe.")
+    jefe_facil = random.choice(posiciones_faciles)
+    restantes = posiciones_jefes_cerca_salida(
+        fila_salida, columna_salida, excluir | {jefe_facil}, cantidad - 1
+    )
+    return restantes | {jefe_facil}
+
+def posiciones_submatriz_salida(fila_salida, columna_salida):
+    direccion_fila = 1 if fila_salida == 0 else -1
+    direccion_columna = 1 if columna_salida == 0 else -1
+    return {
+        (fila_salida + direccion_fila * desplazamiento_fila,
+         columna_salida + direccion_columna * desplazamiento_columna)
+        for desplazamiento_fila in range(3)
+        for desplazamiento_columna in range(4)
+    }
+
+def generar_minijefes(fila_salida, columna_salida, excluir):
+    submatriz = posiciones_submatriz_salida(fila_salida, columna_salida)
+    cercanos = [
+        posicion for posicion in submatriz
+        if posicion not in excluir and posicion != (fila_salida, columna_salida)
+    ]
+    lejanos = [
+        (f, c)
+        for f in range(TAMANO)
+        for c in range(TAMANO)
+        if abs(f - fila_salida) + abs(c - columna_salida) >= 5
+        and (f, c) not in excluir
+        and (f, c) not in submatriz
+    ]
+    if len(cercanos) < MINIJEFES_CERCA or len(lejanos) < MINIJEFES_LEJANOS:
+        raise RuntimeError("No hay suficientes posiciones para colocar a los minijefes.")
+    return (
+        set(random.sample(cercanos, MINIJEFES_CERCA))
+        | set(random.sample(lejanos, MINIJEFES_LEJANOS))
+    )
+
 def generar_mundo():
     global mundo, visitados, jugador_fila, jugador_columna
-    global jefes, salida_fila, salida_columna
+    global jefes, minijefes, salida_fila, salida_columna
     global salida_revelada, jefes_derrotados, victoria
     global vida, energia, nivel, experiencia, movimientos, turnos
     global partida_terminada, eventos
@@ -256,14 +325,17 @@ def generar_mundo():
     visitados = [[False] * TAMANO for _ in range(TAMANO)]
     visitados[jugador_fila][jugador_columna] = True
 
-    ocupadas = {(jugador_fila, jugador_columna)}
-    jefes = set()
-    for _ in range(3):
-        p = posicion_libre(ocupadas)
-        jefes.add(p)
-        ocupadas.add(p)
-
-    salida_fila, salida_columna = posicion_libre(ocupadas)
+    salida_fila, salida_columna = random.choice((
+        (0, 0), (0, TAMANO - 1),
+        (TAMANO - 1, 0), (TAMANO - 1, TAMANO - 1)
+    ))
+    jefes = generar_posiciones_jefes(
+        salida_fila, salida_columna, {(jugador_fila, jugador_columna)}, 3
+    )
+    minijefes = generar_minijefes(
+        salida_fila, salida_columna,
+        jefes | {(jugador_fila, jugador_columna)}
+    )
     salida_revelada = False
     jefes_derrotados = 0
     victoria = False
@@ -414,14 +486,17 @@ def dibujar_mapa():
                 color = BIOMAS[bioma]["color"]
                 simbolo = bioma
 
-            # La salida solo aparece después del acertijo
-            if salida_revelada and pos == (salida_fila, salida_columna):
+            if pos == (salida_fila, salida_columna):
                 color = "#F4E8C9"
                 simbolo = "salida"
 
-            if pos in jefes and visitados[f][c]:
+            if pos in jefes:
                 color = "#F4DFDC"
                 simbolo = "jefe"
+
+            if pos in minijefes:
+                color = "#EAE1F2"
+                simbolo = "minijefe"
 
             if pos == (jugador_fila, jugador_columna):
                 color = "#DFECE4"
@@ -441,6 +516,13 @@ def dibujar_mapa():
                                    fill="#B75F57", outline="")
                 canvas.create_text(centro_x, centro_y, text="J", fill="#FFFFFF",
                                    font=("Segoe UI", max(9, int(celda * .22)), "bold"))
+            elif simbolo == "minijefe":
+                radio = celda * .20
+                canvas.create_oval(centro_x - radio, centro_y - radio,
+                                   centro_x + radio, centro_y + radio,
+                                   fill="#8663A8", outline="")
+                canvas.create_text(centro_x, centro_y, text="m", fill="#FFFFFF",
+                                   font=("Segoe UI", max(9, int(celda * .2)), "bold"))
             elif simbolo == "salida":
                 radio = celda * .24
                 canvas.create_oval(centro_x - radio, centro_y - radio,
@@ -464,8 +546,27 @@ def dibujar_mapa():
                                        cx + radio, centro_y + radio,
                                        fill="#D8DDD7", outline="")
 
-    estado = "Salida revelada" if salida_revelada else "Explora y encuentra a los jefes"
-    estado_mapa.config(text=f"{estado}  |  Jefes restantes: {len(jefes)}")
+    fila_min = min(fila for fila, _ in ZONA_FACIL)
+    fila_max = max(fila for fila, _ in ZONA_FACIL) + 1
+    columna_min = min(columna for _, columna in ZONA_FACIL)
+    columna_max = max(columna for _, columna in ZONA_FACIL) + 1
+    canvas.create_rectangle(
+        x0 + columna_min * celda + separacion / 2,
+        y0 + fila_min * celda + separacion / 2,
+        x0 + columna_max * celda - separacion / 2,
+        y0 + fila_max * celda - separacion / 2,
+        outline="#568264", width=3, dash=(7, 3)
+    )
+    zona_jefe = (
+        "Jefe en zona fácil: dado 1–4"
+        if (jugador_fila, jugador_columna) in ZONA_FACIL
+        else "Zona fácil superior marcada: jefes usan dado 1–4"
+    )
+    estado = "Salida abierta" if salida_revelada else "Salida visible · derrota a los jefes para abrirla"
+    estado_mapa.config(
+        text=f"{estado}  |  {zona_jefe}  |  Jefes: {len(jefes)}"
+             f"  ·  Minijefes: {len(minijefes)}"
+    )
 
 def actualizar_todo():
     if not raiz.winfo_exists():
@@ -481,6 +582,7 @@ def actualizar_todo():
     metricas_label.config(
         text=f"Zonas exploradas: {exploradas}\n"
              f"Jefes derrotados: {jefes_derrotados} / 3\n"
+             f"Minijefes restantes: {len(minijefes)}\n"
              f"Movimientos: {movimientos}\n"
              f"Turnos: {turnos}\n"
              f"Encuentro enemigo: {probabilidad_enemigo()}%\n"
@@ -493,6 +595,16 @@ def probabilidad_enemigo():
 
 def caras_dado():
     return max(2, 7 - nivel)
+
+def caras_dado_jefe(posicion):
+    if posicion in ZONA_FACIL:
+        return CARAS_DADO_ZONA_FACIL
+    return caras_dado()
+
+def probabilidad_minijefe(fila, columna):
+    if (fila, columna) in posiciones_submatriz_salida(salida_fila, salida_columna):
+        return 30
+    return 5
 
 # --------------------------- Juego ---------------------------
 
@@ -546,10 +658,14 @@ def combate_enemigo():
 
 def combate_jefe(posicion):
     global vida, jefes_derrotados
-    resistencia = 2
-    registrar("¡Un jefe bloquea tu camino!", ROJO)
+    resistencia = 3
+    en_zona_facil = posicion in ZONA_FACIL
+    if en_zona_facil:
+        registrar("¡Jefe en la zona fácil! El dado va del 1 al 4.", VERDE)
+    else:
+        registrar("¡Un jefe bloquea tu camino!", ROJO)
     while resistencia > 0 and vida > 0:
-        caras = caras_dado()
+        caras = caras_dado_jefe(posicion)
         respuesta = simpledialog.askinteger(
             "Combate contra jefe",
             f"Jefe: {resistencia} puntos de resistencia\n"
@@ -579,13 +695,44 @@ def combate_jefe(posicion):
         jefes_derrotados += 1
     registrar("¡Jefe derrotado! Ganaste experiencia.", VERDE)
     ganar_experiencia()
-    if len(jefes) == 0:
-        resolver_acertijo()
+    resolver_acertijo()
     actualizar_todo()
 
-def ganar_experiencia():
+def combate_minijefe(posicion):
+    global vida
+    resistencia = 2
+    registrar("¡Apareció un minijefe! Vencerlo te dará experiencia para subir de nivel.", "#8663A8")
+    while resistencia > 0 and vida > 0:
+        caras = caras_dado()
+        respuesta = simpledialog.askinteger(
+            "Combate contra minijefe",
+            f"Minijefe: {resistencia} puntos de resistencia\n"
+            f"Tu vida: {vida}\n\nAdivina el resultado del dado (1–{caras}).",
+            minvalue=1, maxvalue=caras, parent=raiz
+        )
+        resultado = random.randint(1, caras)
+        if respuesta == resultado:
+            resistencia -= 1
+            registrar(f"¡Golpe acertado! Resistencia del minijefe: {resistencia}.", VERDE)
+        else:
+            vida = max(0, vida - 10)
+            registrar(f"Fallaste: salió {resultado}. Perdiste 10 de vida.", ROJO)
+        actualizar_todo()
+
+    if vida <= 0:
+        comprobar_muerte()
+        return
+
+    minijefes.discard(posicion)
+    registrar(
+        f"¡Minijefe derrotado! Ganaste {EXPERIENCIA_MINIJEFE}% de experiencia.",
+        "#8663A8"
+    )
+    ganar_experiencia(EXPERIENCIA_MINIJEFE)
+    actualizar_todo()
+
+def ganar_experiencia(ganancia=75):
     global nivel, experiencia
-    ganancia = 50 / (2 ** (nivel - 1))
     experiencia += ganancia
     registrar(f"Ganaste {ganancia:g}% de experiencia.", AMARILLO)
     while experiencia >= 100:
@@ -593,39 +740,80 @@ def ganar_experiencia():
         nivel += 1
         registrar(f"¡Subiste al nivel {nivel}!", VERDE)
 
+def solicitar_operacion_matriz():
+    dialogo = tk.Toplevel(raiz)
+    dialogo.title("Transformar matriz del mapa")
+    dialogo.transient(raiz)
+    dialogo.resizable(False, False)
+    dialogo.configure(bg=PANEL)
+    operacion = {"valor": None}
+
+    tk.Label(
+        dialogo,
+        text="El jefe cayó. Elige una operación para reorganizar los biomas:",
+        font=FUENTE_BOLD, fg=TEXTO, bg=PANEL, wraplength=460,
+        justify="left", padx=20, pady=18
+    ).pack(fill="x")
+
+    opciones = tk.Frame(dialogo, bg=PANEL)
+    opciones.pack(fill="x", padx=14, pady=(0, 14))
+
+    def elegir(valor):
+        operacion["valor"] = valor
+        dialogo.destroy()
+
+    for texto, valor in (
+        ("Cambiar dos filas", "filas"),
+        ("Cambiar dos columnas", "columnas"),
+        ("Reorganizar mapa\n(transpuesta)", "transpuesta"),
+    ):
+        tk.Button(
+            opciones, text=texto, font=FUENTE_BOLD, fg=TEXTO, bg="#E8F0EA",
+            activebackground="#DCE8DF", relief="flat", padx=10, pady=10,
+            cursor="hand2", command=lambda v=valor: elegir(v)
+        ).pack(side="left", expand=True, fill="x", padx=4)
+
+    dialogo.protocol("WM_DELETE_WINDOW", lambda: None)
+    dialogo.bind("1", lambda _evento: elegir("filas"))
+    dialogo.bind("2", lambda _evento: elegir("columnas"))
+    dialogo.bind("3", lambda _evento: elegir("transpuesta"))
+    dialogo.update_idletasks()
+    x = raiz.winfo_rootx() + (raiz.winfo_width() - dialogo.winfo_width()) // 2
+    y = raiz.winfo_rooty() + (raiz.winfo_height() - dialogo.winfo_height()) // 2
+    dialogo.geometry(f"+{max(0, x)}+{max(0, y)}")
+    dialogo.grab_set()
+    dialogo.focus_set()
+    raiz.wait_window(dialogo)
+    return operacion["valor"]
+
 def resolver_acertijo():
     global mundo, visitados, jugador_fila, jugador_columna
-    global salida_fila, salida_columna, salida_revelada, jefes
+    global salida_fila, salida_columna, salida_revelada, jefes, minijefes
 
-    opcion = messagebox.askyesnocancel(
-        "El mecanismo antiguo",
-        "¡Derrotaste a los tres jefes!\n\n"
-        "Elige la transformación del mapa:\n\n"
-        "Sí = intercambiar dos renglones\n"
-        "No = intercambiar dos columnas\n"
-        "Cancelar = calcular la transpuesta",
-        parent=raiz
-    )
+    opcion = solicitar_operacion_matriz()
 
-    if opcion is True:
-        r1 = random.randrange(TAMANO)
-        r2 = (r1 + random.randint(1, TAMANO - 1)) % TAMANO
+    if opcion == "filas":
+        filas_disponibles = [f for f in range(TAMANO) if f != salida_fila]
+        r1, r2 = random.sample(filas_disponibles, 2)
         mundo[r1], mundo[r2] = mundo[r2], mundo[r1]
         visitados[r1], visitados[r2] = visitados[r2], visitados[r1]
         if jugador_fila == r1:
             jugador_fila = r2
         elif jugador_fila == r2:
             jugador_fila = r1
-        if salida_fila == r1:
-            salida_fila = r2
-        elif salida_fila == r2:
-            salida_fila = r1
-        jefes = {(r2 if f == r1 else r1 if f == r2 else f, c) for f, c in jefes}
+        jefes = {
+            (r2 if f == r1 else r1 if f == r2 else f, c)
+            for f, c in jefes
+        }
+        minijefes = {
+            (r2 if f == r1 else r1 if f == r2 else f, c)
+            for f, c in minijefes
+        }
         registrar(f"Transformación aplicada: intercambio de renglones {r1 + 1} y {r2 + 1}.", VERDE)
 
-    elif opcion is False:
-        c1 = random.randrange(TAMANO)
-        c2 = (c1 + random.randint(1, TAMANO - 1)) % TAMANO
+    elif opcion == "columnas":
+        columnas_disponibles = [c for c in range(TAMANO) if c != salida_columna]
+        c1, c2 = random.sample(columnas_disponibles, 2)
         for f in range(TAMANO):
             mundo[f][c1], mundo[f][c2] = mundo[f][c2], mundo[f][c1]
             visitados[f][c1], visitados[f][c2] = visitados[f][c2], visitados[f][c1]
@@ -633,26 +821,44 @@ def resolver_acertijo():
             jugador_columna = c2
         elif jugador_columna == c2:
             jugador_columna = c1
-        if salida_columna == c1:
-            salida_columna = c2
-        elif salida_columna == c2:
-            salida_columna = c1
-        jefes = {(f, c2 if c == c1 else c1 if c == c2 else c) for f, c in jefes}
+        jefes = {
+            (f, c2 if c == c1 else c1 if c == c2 else c)
+            for f, c in jefes
+        }
+        minijefes = {
+            (f, c2 if c == c1 else c1 if c == c2 else c)
+            for f, c in minijefes
+        }
         registrar(f"Transformación aplicada: intercambio de columnas {c1 + 1} y {c2 + 1}.", VERDE)
 
-    else:
+    elif opcion == "transpuesta":
         mundo = [list(fila) for fila in zip(*mundo)]
         visitados = [list(fila) for fila in zip(*visitados)]
         jugador_fila, jugador_columna = jugador_columna, jugador_fila
         salida_fila, salida_columna = salida_columna, salida_fila
         jefes = {(c, f) for f, c in jefes}
+        minijefes = {(c, f) for f, c in minijefes}
         registrar("Transformación aplicada: transpuesta del mapa.", VERDE)
 
-    salida_revelada = True
+    else:
+        raise ValueError("La operación matricial seleccionada no es válida.")
+
+    jefes = generar_posiciones_jefes(
+        salida_fila, salida_columna,
+        jefes | minijefes | {(jugador_fila, jugador_columna)},
+        len(jefes)
+    )
     for f in range(TAMANO):
         for c in range(TAMANO):
             visitados[f][c] = True
-    registrar("¡Mapa revelado! Encuentra la salida amarilla S.", AMARILLO)
+    salida_revelada = not jefes
+    if jefes:
+        registrar(
+            f"Los {len(jefes)} jefes restantes cambiaron de posición y están cerca de la salida.",
+            AMARILLO
+        )
+    else:
+        registrar("¡Derrotaste a todos los jefes! La salida de la esquina está abierta.", AMARILLO)
     actualizar_todo()
 
 def mover(df, dc):
@@ -678,13 +884,22 @@ def mover(df, dc):
 
     if pos in jefes:
         combate_jefe(pos)
+    elif pos in minijefes:
+        combate_minijefe(pos)
+    elif (pos != (salida_fila, salida_columna)
+            and random.randint(1, 100) <= probabilidad_minijefe(nf, nc)):
+        registrar("La zona atrae a un minijefe errante.", "#8663A8")
+        combate_minijefe(pos)
     else:
         if random.randint(1, 100) <= probabilidad_enemigo():
             combate_enemigo()
 
     if vida > 0 and not partida_terminada:
         explorar()
-        comprobar_victoria()
+        if not salida_revelada and (jugador_fila, jugador_columna) == (salida_fila, salida_columna):
+            registrar("Encontraste la salida, pero está sellada. Derrota a los tres jefes.", AMARILLO)
+        if vida > 0 and not partida_terminada and comprobar_victoria():
+            return
     actualizar_todo()
 
 def descansar():
@@ -703,9 +918,19 @@ def descansar():
 
     if salida_revelada and random.random() < 0.20:
         anterior_salida = (salida_fila, salida_columna)
-        salida_fila, salida_columna = posicion_libre({
-            (jugador_fila, jugador_columna), anterior_salida
-        })
+        esquinas_disponibles = [
+            (f, c)
+            for f, c in (
+                (0, 0), (0, TAMANO - 1),
+                (TAMANO - 1, 0), (TAMANO - 1, TAMANO - 1)
+            )
+            if (f, c) not in (
+                jefes | minijefes
+                | {(jugador_fila, jugador_columna), anterior_salida}
+            )
+        ]
+        if esquinas_disponibles:
+            salida_fila, salida_columna = random.choice(esquinas_disponibles)
         registrar("¡La salida cambió de posición! Tendrás que encontrarla de nuevo.", AMARILLO)
     elif salida_revelada:
         registrar("La salida no cambió de posición.")
@@ -720,8 +945,9 @@ def comprobar_victoria():
         victoria = True
         partida_terminada = True
         registrar(f"¡Felicidades, {nombre_jugador}! Escapaste de Aether.", VERDE)
-        messagebox.showinfo("Victoria", f"¡Lo lograste, {nombre_jugador}!\nEscapaste de Aether.", parent=raiz)
-        actualizar_todo()
+        raiz.destroy()
+        return True
+    return False
 
 def comprobar_muerte():
     global vida, partida_terminada
@@ -746,7 +972,7 @@ def seleccionar_seccion(nombre):
             fg=AZUL if texto == nombre else TEXTO
         )
     if nombre == "Mapa":
-        registrar("Mapa principal: ● eres tú, J son jefes y S es la salida.", SUAVE)
+        registrar("Mapa: ● eres tú, J son jefes, m son minijefes y S es la salida.", SUAVE)
     elif nombre == "Movimiento":
         messagebox.showinfo("Movimiento", "Usa W/A/S/D o las flechas del teclado.\nCada movimiento consume 10 de energía.", parent=raiz)
     elif nombre == "Métricas":
@@ -769,7 +995,8 @@ def mostrar_metricas():
         f"Jugador: {nombre_jugador}\nNivel: {nivel}\nExperiencia: {experiencia:.2f}%\n"
         f"Vida: {vida}/{VIDA_MAXIMA}\nEnergía: {energia}/{ENERGIA_MAXIMA}\n"
         f"Zonas exploradas: {exploradas}/{TAMANO*TAMANO}\n"
-        f"Movimientos: {movimientos}\nTurnos: {turnos}\nJefes derrotados: {jefes_derrotados}/3\n"
+        f"Movimientos: {movimientos}\nTurnos: {turnos}\n"
+        f"Jefes derrotados: {jefes_derrotados}/3\nMinijefes restantes: {len(minijefes)}\n"
         f"Probabilidad de enemigo: {probabilidad_enemigo()}%\nCaras del dado: {caras_dado()}",
         parent=raiz
     )
@@ -778,7 +1005,16 @@ def mostrar_opciones():
     messagebox.showinfo(
         "Opciones",
         "Controles:\nW/A/S/D o flechas: mover\nE: explorar\nR: descansar\nM: métricas\nI: mostrar ayuda\nG: guardar\nL: cargar\nQ: salir\n\n"
-        "La aventura usa un mapa de 10 × 10. La salida se revela al derrotar a los tres jefes.",
+        "Mapa de 10 × 10. Hay 4 minijefes señalizados en una submatriz de 3 × 4 junto "
+        "a la salida y 2 minijefes remotos para farmear. También pueden aparecer minijefes "
+        "errantes: 30% de probabilidad en la submatriz y 5% fuera de ella. Cada minijefe "
+        "tiene 2 puntos de resistencia y otorga experiencia; subir de nivel facilita los "
+        "dados y reduce los encuentros normales. "
+        "La salida aparece en una esquina y los jefes principales se agrupan cerca. "
+        "La zona marcada arriba del centro usa siempre un dado de jefe del 1 al 4. "
+        "Al vencer cada jefe debes cambiar dos filas, cambiar dos columnas o transponer "
+        "la matriz de biomas; queda un jefe en la zona fácil y los demás se reubican cerca de la salida. "
+        "La salida se abre al derrotar a los tres.",
         parent=raiz
     )
 
@@ -794,10 +1030,11 @@ def guardar_partida():
         "jugador_fila": jugador_fila, "jugador_columna": jugador_columna,
         "vida": vida, "energia": energia, "nivel": nivel, "experiencia": experiencia,
         "jefes": [list(pos) for pos in sorted(jefes)], "jefes_derrotados": jefes_derrotados,
+        "minijefes": [list(pos) for pos in sorted(minijefes)],
         "salida_fila": salida_fila, "salida_columna": salida_columna,
         "salida_revelada": salida_revelada, "movimientos": movimientos, "turnos": turnos,
         "victoria": victoria, "partida_terminada": partida_terminada,
-        "version": 1
+        "version": 4
     }
     try:
         with open(archivo, "w", encoding="utf-8") as f:
@@ -808,7 +1045,7 @@ def guardar_partida():
 
 def cargar_partida():
     global nombre_jugador, mundo, visitados, jugador_fila, jugador_columna
-    global vida, energia, nivel, experiencia, jefes, jefes_derrotados
+    global vida, energia, nivel, experiencia, jefes, minijefes, jefes_derrotados
     global salida_fila, salida_columna, salida_revelada, movimientos, turnos
     global victoria, partida_terminada, juego_iniciado, eventos
 
@@ -830,7 +1067,8 @@ def cargar_partida():
             datos = dict(datos)
             datos["turnos"] = datos.get("movimientos")
             datos["version"] = 1
-        elif type(datos["version"]) is not int or datos["version"] != 1:
+        version_guardada = datos["version"]
+        if type(version_guardada) is not int or version_guardada not in (1, 2, 3, 4):
             raise ValueError("El archivo no es una partida compatible de Aether.")
 
         nombre = datos["nombre"]
@@ -886,6 +1124,24 @@ def cargar_partida():
                 or jefes_derrotados_guardados != 3 - len(nuevos_jefes)):
             raise ValueError("Las posiciones o el conteo de jefes son inconsistentes.")
 
+        nuevos_minijefes = set()
+        if version_guardada >= 3:
+            posiciones_minijefes = datos["minijefes"]
+            if (not isinstance(posiciones_minijefes, list)
+                    or len(posiciones_minijefes) > MINIJEFES_CERCA + MINIJEFES_LEJANOS):
+                raise ValueError("La lista de minijefes no es válida.")
+            for posicion in posiciones_minijefes:
+                if (not isinstance(posicion, list) or len(posicion) != 2
+                        or any(type(coordenada) is not int
+                               or not 0 <= coordenada < TAMANO for coordenada in posicion)):
+                    raise ValueError("Una posición de minijefe no es válida.")
+                nuevos_minijefes.add(tuple(posicion))
+            if (len(nuevos_minijefes) != len(posiciones_minijefes)
+                    or nuevos_minijefes & nuevos_jefes
+                    or (fila_jugador, columna_jugador) in nuevos_minijefes
+                    or (fila_salida, columna_salida) in nuevos_minijefes):
+                raise ValueError("Las posiciones de los minijefes son inconsistentes.")
+
         nueva_salida_revelada = datos["salida_revelada"]
         nueva_victoria = datos.get(
             "victoria",
@@ -900,13 +1156,67 @@ def cargar_partida():
                 or type(nueva_victoria) is not bool
                 or type(nueva_partida_terminada) is not bool):
             raise ValueError("El estado de finalización no es válido.")
+        if version_guardada == 1:
+            esquinas = (
+                (0, 0), (0, TAMANO - 1),
+                (TAMANO - 1, 0), (TAMANO - 1, TAMANO - 1)
+            )
+            if nueva_victoria:
+                if not es_esquina(fila_jugador, columna_jugador):
+                    fila_jugador, columna_jugador = min(
+                        esquinas,
+                        key=lambda pos: abs(pos[0] - fila_jugador)
+                        + abs(pos[1] - columna_jugador)
+                    )
+                fila_salida, columna_salida = fila_jugador, columna_jugador
+            elif (not es_esquina(fila_salida, columna_salida)
+                    or (fila_jugador, columna_jugador) == (fila_salida, columna_salida)):
+                opciones_salida = [
+                    pos for pos in esquinas if pos != (fila_jugador, columna_jugador)
+                ]
+                fila_salida, columna_salida = random.choice(opciones_salida)
+
+            if nuevos_jefes and any(
+                not 1 <= abs(f - fila_salida) + abs(c - columna_salida) <= RADIO_JEFES_SALIDA
+                or (f, c) == (fila_jugador, columna_jugador)
+                for f, c in nuevos_jefes
+            ):
+                nuevos_jefes = posiciones_jefes_cerca_salida(
+                    fila_salida, columna_salida,
+                    {(fila_jugador, columna_jugador)}, len(nuevos_jefes)
+                )
         if (nueva_salida_revelada != (len(nuevos_jefes) == 0)
+                or not es_esquina(fila_salida, columna_salida)
+                or (version_guardada < 4 and any(
+                    not 1 <= abs(f - fila_salida) + abs(c - columna_salida) <= RADIO_JEFES_SALIDA
+                    or (f, c) == (fila_jugador, columna_jugador)
+                    for f, c in nuevos_jefes
+                ))
+                or (version_guardada >= 4 and (
+                    len(nuevos_jefes & ZONA_FACIL) != (1 if nuevos_jefes else 0)
+                    or any(
+                        (f, c) not in ZONA_FACIL
+                        and not 1 <= abs(f - fila_salida) + abs(c - columna_salida) <= RADIO_JEFES_SALIDA
+                        for f, c in nuevos_jefes
+                    )
+                ))
                 or (nueva_victoria and (
                     not nueva_partida_terminada or not nueva_salida_revelada
                     or (fila_jugador, columna_jugador) != (fila_salida, columna_salida)))
                 or (nueva_partida_terminada and not nueva_victoria and nueva_vida != 0)
                 or (not nueva_partida_terminada and nueva_vida == 0)):
             raise ValueError("El estado guardado de la aventura es inconsistente.")
+        if version_guardada < 3:
+            nuevos_minijefes = generar_minijefes(
+                fila_salida, columna_salida,
+                nuevos_jefes | {(fila_jugador, columna_jugador)}
+            )
+        if version_guardada < 4:
+            nuevos_jefes = generar_posiciones_jefes(
+                fila_salida, columna_salida,
+                nuevos_jefes | nuevos_minijefes | {(fila_jugador, columna_jugador)},
+                len(nuevos_jefes)
+            )
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         messagebox.showerror("No se pudo cargar la partida", str(error), parent=raiz)
         return
@@ -917,7 +1227,8 @@ def cargar_partida():
     jugador_fila, jugador_columna = fila_jugador, columna_jugador
     vida, energia = nueva_vida, nueva_energia
     nivel, experiencia = nuevo_nivel, nueva_experiencia
-    jefes, jefes_derrotados = nuevos_jefes, jefes_derrotados_guardados
+    jefes, minijefes = nuevos_jefes, nuevos_minijefes
+    jefes_derrotados = jefes_derrotados_guardados
     salida_fila, salida_columna = fila_salida, columna_salida
     salida_revelada = nueva_salida_revelada
     movimientos = nuevos_movimientos
@@ -999,9 +1310,12 @@ def actualizar_leyenda_inferior():
              padx=5, pady=7).pack(side="left")
     tk.Label(leyenda, text="● Jefe", fg=ROJO, bg=PANEL, font=FUENTE_BOLD,
              padx=5, pady=7).pack(side="left")
+    tk.Label(leyenda, text="● Minijefe", fg="#8663A8", bg=PANEL,
+             font=FUENTE_BOLD, padx=5, pady=7).pack(side="left")
     tk.Label(leyenda, text="● Salida", fg=AMARILLO, bg=PANEL, font=FUENTE_BOLD,
              padx=5, pady=7).pack(side="left")
-    tk.Label(leyenda, text="Las zonas grises siguen ocultas", fg=SUAVE, bg=PANEL,
+    tk.Label(leyenda, text="Zona fácil superior: jefe 1–4 · 4 minijefes cerca · 2 remotos",
+             fg=SUAVE, bg=PANEL,
              font=("Segoe UI", 9), padx=5, pady=7).pack(side="right")
 
 
