@@ -10,6 +10,7 @@
 #define N_GENEROS 7
 
 enum { CORRIDO, URBANO, REGGAETON, ROCK, METAL, SALSA, POP };
+
 const char *NOMBRE_GENERO[N_GENEROS] = {
     "CORRIDO", "URBANO", "REGGAETON", "ROCK", "METAL", "SALSA", "POP"
 };
@@ -61,6 +62,8 @@ Cancion catalogo[N_CANCIONES] = {
     {"Flowers", "Miley Cyrus", POP, 200, 2300}
 };
 
+/* OPERACIONES CON CONJUNTOS */
+
 Conjunto unionConjuntos(Conjunto a, Conjunto b) {
     return a | b;
 }
@@ -91,11 +94,15 @@ void imprimirConjunto(const char *nombre, Conjunto conjunto)
     printf("}\n");
 }
 
+/* INICIALIZAR PLAYLIST */
+
 void inicializarPlaylist(Playlist *p)
 {
     p->primero = p->ultimo = p->actual = NULL;
     p->cantidad = 0;
 }
+
+/* CREAR NODO */
 
 Nodo *crearNodo(Cancion cancion)
 {
@@ -113,17 +120,21 @@ Nodo *crearNodo(Cancion cancion)
     return nuevo;
 }
 
-/* Agrega al final y mantiene la lista circular. */
+/* AGREGAR CANCION AL FINAL DE LA LISTA CIRCULAR */
+
 void agregarFinal(Playlist *p, Cancion cancion)
 {
     Nodo *nuevo = crearNodo(cancion);
 
     if (p->primero == NULL) {
+
         p->primero = p->ultimo = p->actual = nuevo;
 
         nuevo->siguiente = nuevo;
         nuevo->anterior = nuevo;
+
     } else {
+
         nuevo->anterior = p->ultimo;
         nuevo->siguiente = p->primero;
 
@@ -135,6 +146,8 @@ void agregarFinal(Playlist *p, Cancion cancion)
 
     p->cantidad++;
 }
+
+/* LEER TEXTO */
 
 int leerLinea(const char *mensaje, char *texto, size_t capacidad)
 {
@@ -171,6 +184,8 @@ int leerLinea(const char *mensaje, char *texto, size_t capacidad)
     }
 }
 
+/* LEER ENTEROS */
+
 int leerEntero(const char *mensaje, int minimo, int maximo, int *valor)
 {
     char texto[128];
@@ -202,6 +217,8 @@ int leerEntero(const char *mensaje, int minimo, int maximo, int *valor)
     }
 }
 
+/* AGREGAR CANCION DESDE EL TECLADO */
+
 int agregarCancionDesdeEntrada(Playlist *p)
 {
     Cancion cancion;
@@ -231,7 +248,8 @@ int agregarCancionDesdeEntrada(Playlist *p)
     return 1;
 }
 
-/* Libera todos los nodos de la lista circular. */
+/* LIBERAR MEMORIA */
+
 void liberarPlaylist(Playlist *p)
 {
     Nodo *aux = p->primero;
@@ -246,43 +264,45 @@ void liberarPlaylist(Playlist *p)
     inicializarPlaylist(p);
 }
 
-/* Ordena de mayor a menor streams intercambiando canciones. */
+/* ORDENAR POR STREAMS DE MAYOR A MENOR */
+
 void ordenarPorStreams(Playlist *p)
 {
     Nodo *i, *j;
+    int a, b;
 
-    for (i = p->primero, j = NULL; j == NULL && i != NULL; ) {
-        break;
-    }
+    for (a = 0, i = p->primero; a < p->cantidad - 1;
+         a++, i = i->siguiente) {
 
-    if (p->cantidad < 2)
-        return;
+        for (b = a + 1, j = i->siguiente; b < p->cantidad;
+             b++, j = j->siguiente) {
 
-    for (i = p->primero; ; i = i->siguiente) {
-        for (j = i->siguiente; j != p->primero; j = j->siguiente) {
             if (i->cancion.streams < j->cancion.streams) {
+
                 Cancion temporal = i->cancion;
                 i->cancion = j->cancion;
                 j->cancion = temporal;
             }
         }
-
-        if (i->siguiente == p->ultimo)
-            break;
     }
 }
+
+/* GENERAR PLAYLIST */
 
 void generarPlaylist(Playlist *p, Conjunto generos)
 {
     int i;
 
     for (i = 0; i < N_CANCIONES; i++) {
+
         if (generos & GENERO(catalogo[i].genero))
             agregarFinal(p, catalogo[i]);
     }
 
     ordenarPorStreams(p);
 }
+
+/* IMPRIMIR CANCION */
 
 void imprimirCancion(const Cancion *c, int posicion)
 {
@@ -293,21 +313,27 @@ void imprimirCancion(const Cancion *c, int posicion)
            c->duracion % 60, c->streams);
 }
 
+/* POSICION DE LA CANCION ACTUAL */
+
 int posicionActual(const Playlist *p)
 {
     Nodo *aux = p->primero;
     int posicion = 1;
+    int i;
 
-    if (p->actual == NULL)
-        return 0;
+    for (i = 0; i < p->cantidad; i++) {
 
-    while (aux != p->actual) {
+        if (aux == p->actual)
+            return posicion;
+
         aux = aux->siguiente;
         posicion++;
     }
 
-    return posicion;
+    return 0;
 }
+
+/* MOSTRAR CANCION ACTUAL */
 
 void mostrarCancionActual(const Playlist *p)
 {
@@ -324,33 +350,53 @@ void mostrarCancionActual(const Playlist *p)
            posicionActual(p), p->cantidad);
 }
 
-/* Avanza y regresa al inicio cuando llega al final. */
-void siguienteCancion(Playlist *p)
+/* SIGUIENTE CANCION */
+
+void siguienteCancion(Playlist *p, int loop)
 {
     if (p->actual == NULL) {
+
         printf("\nLa playlist esta vacia.\n");
+
+    } else if (p->actual == p->ultimo && !loop) {
+
+        printf("\nYa estas en la ultima cancion.\n");
+        mostrarCancionActual(p);
+
     } else {
+
         p->actual = p->actual->siguiente;
         mostrarCancionActual(p);
     }
 }
 
-/* Regresa y va al final cuando llega al inicio. */
-void cancionAnterior(Playlist *p)
+/* CANCION ANTERIOR */
+
+void cancionAnterior(Playlist *p, int loop)
 {
     if (p->actual == NULL) {
+
         printf("\nLa playlist esta vacia.\n");
+
+    } else if (p->actual == p->primero && !loop) {
+
+        printf("\nYa estas en la primera cancion.\n");
+        mostrarCancionActual(p);
+
     } else {
+
         p->actual = p->actual->anterior;
         mostrarCancionActual(p);
     }
 }
 
-/* Muestra cada cancion una sola vez. */
+/* MOSTRAR PLAYLIST COMPLETA */
+
 void mostrarPlaylist(const Playlist *p)
 {
     Nodo *aux = p->primero;
     int posicion = 1;
+    int i;
 
     if (aux == NULL) {
         printf("\nLa playlist esta vacia.\n");
@@ -360,28 +406,57 @@ void mostrarPlaylist(const Playlist *p)
     printf("\n========== PLAYLIST (%d canciones) ==========\n",
            p->cantidad);
 
-    do {
+    for (i = 0; i < p->cantidad; i++) {
+
         printf(aux == p->actual ? " >> " : "    ");
 
         imprimirCancion(&aux->cancion, posicion++);
 
         aux = aux->siguiente;
-
-    } while (aux != p->primero);
+    }
 }
+
+/* ACTIVAR O DESACTIVAR LOOP */
+
+void cambiarLoop(int *loop)
+{
+    if (*loop == 0) {
+
+        *loop = 1;
+
+        printf("\n========== MODO LOOP ==========\n");
+        printf("LOOP ACTIVADO.\n");
+        printf("La playlist se repetira continuamente.\n");
+
+    } else {
+
+        *loop = 0;
+
+        printf("\n========== MODO LOOP ==========\n");
+        printf("LOOP DESACTIVADO.\n");
+        printf("La reproduccion se detendra al llegar al inicio o al final.\n");
+    }
+}
+
+/* PROGRAMA PRINCIPAL */
 
 int main(void)
 {
     Playlist playlist;
     int opcion;
     int continuar = 1;
+    int loop = 0;
 
     Conjunto amigo1 = GENERO(URBANO) | GENERO(REGGAETON) | GENERO(ROCK);
+
     Conjunto amigo2 = GENERO(URBANO) | GENERO(ROCK) | GENERO(POP);
 
     Conjunto todos = unionConjuntos(amigo1, amigo2);
+
     Conjunto comunes = interseccion(amigo1, amigo2);
+
     Conjunto exclusivos1 = diferencia(amigo1, amigo2);
+
     Conjunto exclusivos2 = diferencia(amigo2, amigo1);
 
     printf("========== PREFERENCIAS MUSICALES ==========\n");
@@ -405,28 +480,36 @@ int main(void)
     imprimirConjunto("GENEROS CONSERVADOS", comunes);
 
     mostrarPlaylist(&playlist);
+
     mostrarCancionActual(&playlist);
 
     do {
+
         printf("\n========== MENU DE REPRODUCCION ==========\n");
+
         printf("1. Siguiente cancion\n");
         printf("2. Cancion anterior\n");
         printf("3. Mostrar playlist\n");
         printf("4. Agregar cancion\n");
+        printf("5. Activar/Desactivar modo LOOP\n");
         printf("0. Salir\n");
 
-        if (!leerEntero("Opcion: ", 0, 4, &opcion)) {
+        printf("\nEstado LOOP: %s\n", loop ? "ACTIVADO" : "DESACTIVADO");
+
+        if (!leerEntero("Opcion: ", 0, 5, &opcion)) {
+
             printf("\nCerrando playlist. Hasta luego.\n");
             break;
         }
 
         switch (opcion) {
+
             case 1:
-                siguienteCancion(&playlist);
+                siguienteCancion(&playlist, loop);
                 break;
 
             case 2:
-                cancionAnterior(&playlist);
+                cancionAnterior(&playlist, loop);
                 break;
 
             case 3:
@@ -437,12 +520,17 @@ int main(void)
                 continuar = agregarCancionDesdeEntrada(&playlist);
                 break;
 
+            case 5:
+                cambiarLoop(&loop);
+                break;
+
             case 0:
                 printf("Cerrando playlist. Hasta luego.\n");
                 break;
         }
 
         if (!continuar) {
+
             printf("\nCerrando playlist. Hasta luego.\n");
             break;
         }
