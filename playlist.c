@@ -1,6 +1,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include <string.h>
 
 #define N_CANCIONES 20
 #define N_GENEROS 7
@@ -106,6 +110,88 @@ void agregarFinal(Playlist *p, Cancion cancion)
         p->ultimo = nuevo;
     }
     p->cantidad++;
+}
+
+int leerLinea(const char *mensaje, char *texto, size_t capacidad)
+{
+    size_t longitud;
+    int caracter;
+
+    for (;;) {
+        printf("%s", mensaje);
+        if (fgets(texto, (int)capacidad, stdin) == NULL)
+            return 0;
+
+        longitud = strlen(texto);
+        if (longitud > 0 && texto[longitud - 1] == '\n') {
+            texto[--longitud] = '\0';
+        } else {
+            caracter = getchar();
+            if (caracter != '\n' && caracter != EOF) {
+                while ((caracter = getchar()) != '\n' && caracter != EOF) { }
+                printf("La entrada es demasiado larga. Intenta de nuevo.\n");
+                continue;
+            }
+        }
+
+        if (longitud == 0) {
+            printf("El campo no puede estar vacio.\n");
+            continue;
+        }
+        return 1;
+    }
+}
+
+int leerEntero(const char *mensaje, int minimo, int maximo, int *valor)
+{
+    char texto[128];
+    char *fin;
+    long numero;
+    int resultado;
+
+    for (;;) {
+        resultado = leerLinea(mensaje, texto, sizeof(texto));
+        if (!resultado)
+            return 0;
+
+        errno = 0;
+        numero = strtol(texto, &fin, 10);
+        while (isspace((unsigned char)*fin))
+            fin++;
+
+        if (fin == texto || *fin != '\0' || errno == ERANGE ||
+            numero < minimo || numero > maximo) {
+            printf("Ingresa un numero entre %d y %d.\n", minimo, maximo);
+            continue;
+        }
+
+        *valor = (int)numero;
+        return 1;
+    }
+}
+
+int agregarCancionDesdeEntrada(Playlist *p)
+{
+    Cancion cancion;
+    int genero;
+    int i;
+
+    if (!leerLinea("Titulo: ", cancion.titulo, sizeof(cancion.titulo)) ||
+        !leerLinea("Artista: ", cancion.artista, sizeof(cancion.artista)))
+        return 0;
+
+    printf("Generos disponibles:\n");
+    for (i = 0; i < N_GENEROS; i++)
+        printf("%d. %s\n", i + 1, NOMBRE_GENERO[i]);
+    if (!leerEntero("Genero (numero): ", 1, N_GENEROS, &genero) ||
+        !leerEntero("Duracion en segundos: ", 1, INT_MAX, &cancion.duracion) ||
+        !leerEntero("Streams en millones: ", 0, INT_MAX, &cancion.streams))
+        return 0;
+
+    cancion.genero = genero - 1;
+    agregarFinal(p, cancion);
+    printf("Cancion agregada al final de la playlist.\n");
+    return 1;
 }
 
 void liberarPlaylist(Playlist *p)
@@ -221,6 +307,7 @@ int main(void)
 {
     Playlist playlist;
     int opcion;
+    int continuar = 1;
     Conjunto amigo1 = GENERO(URBANO) | GENERO(REGGAETON) | GENERO(ROCK);
     Conjunto amigo2 = GENERO(URBANO) | GENERO(ROCK) | GENERO(POP);
     Conjunto todos = unionConjuntos(amigo1, amigo2);
@@ -250,23 +337,28 @@ int main(void)
         printf("1. Siguiente cancion\n");
         printf("2. Cancion anterior\n");
         printf("3. Mostrar playlist\n");
+        printf("4. Agregar cancion\n");
         printf("0. Salir\n");
-        printf("Opcion: ");
 
-        if (scanf("%d", &opcion) != 1) {
-            int c;
-            while ((c = getchar()) != '\n' && c != EOF) { }
-            opcion = -1;
-            printf("Entrada invalida. Escribe un numero.\n");
-            continue;
+        if (!leerEntero("Opcion: ", 0, 4, &opcion)) {
+            printf("\nCerrando playlist. Hasta luego.\n");
+            break;
         }
 
         switch (opcion) {
             case 1: siguienteCancion(&playlist); break;
             case 2: cancionAnterior(&playlist); break;
             case 3: mostrarPlaylist(&playlist); break;
+            case 4:
+                continuar = agregarCancionDesdeEntrada(&playlist);
+                break;
             case 0: printf("Cerrando playlist. Hasta luego.\n"); break;
             default: printf("Opcion no valida.\n");
+        }
+
+        if (!continuar) {
+            printf("\nCerrando playlist. Hasta luego.\n");
+            break;
         }
     } while (opcion != 0);
 
